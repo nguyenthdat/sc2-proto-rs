@@ -2,7 +2,10 @@
 name = "sc2-proto"
 version = "0.2.3"
 description = "Protocol buffers for the StarCraft II Client API"
-authors = ["Andrew J Westlake <kelixes@gmail.com>", "Hannes Karppila <hannes.karppila@gmail.com>"]
+authors = [
+    "Andrew J Westlake <kelixes@gmail.com>",
+    "Hannes Karppila <hannes.karppila@gmail.com>",
+]
 license = "MIT"
 documentation = "https://docs.rs/sc2-proto"
 homepage = "https://github.com/awestlake87/sc2-proto-rs"
@@ -10,8 +13,14 @@ repository = "https://github.com/awestlake87/sc2-proto-rs"
 edition = "2018"
 build = "build.rs"
 
+[features]
+default = ["protoc-rust"]
+protoc-rust = ["protobuf-codegen", "protoc-bin-vendored"]
+
 [build-dependencies]
-protoc-rust = { version = "2.20", optional = true }
+# Use the modern codegen and a vendored protoc so users don't need to install protoc
+protobuf-codegen = { version = "^3", optional = true }
+protoc-bin-vendored = { version = "^3", optional = true }
 
 [dependencies]
-protobuf = "2.20"
+protobuf = { version = "^3", features = ["with-bytes"] }

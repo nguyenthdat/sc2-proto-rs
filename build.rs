@@ -1,5 +1,5 @@
 #[cfg(feature = "protoc-rust")]
-use protoc_rust::{Codegen, Customize};
+use protobuf_codegen::Codegen;
 #[cfg(feature = "protoc-rust")]
 use std::{env, ffi::OsStr, fs, path::Path};
 
@@ -21,32 +21,53 @@ fn proto_modules(proto_dir: &Path) -> Vec<String> {
 
 #[cfg(feature = "protoc-rust")]
 fn main() {
-    let in_dir = "./s2client-proto/s2clientprotocol";
+    let include_root = Path::new("s2client-proto");
+    let include_sub = include_root.join("s2clientprotocol");
     let out_dir = &env::var("OUT_DIR").unwrap();
 
-    // Read list of all input protobuf files
-    let input_mods = proto_modules(Path::new(in_dir));
-    let input_files: Vec<String> = input_mods
-        .iter()
-        .map(|s| format!("{}/{}.proto", in_dir, s))
-        .collect();
-
-    // Compile protocol buffers
-    if let Err(e) = Codegen::new()
-        .out_dir(out_dir)
-        .include("s2client-proto/")
-        .inputs(input_files)
-        .customize(Customize {
-            expose_fields: Some(true),
-            ..Default::default()
-        })
-        .run()
-    {
-        panic!("{:#?}", e);
+    if !include_sub.exists() {
+        panic!(
+            "Proto directory not found: {}. Did you fetch submodules? \
+             Try: git submodule update --init --recursive",
+            include_sub.display()
+        );
     }
-    println!("protobufs were generated successfully");
+    let input_mods = proto_modules(&include_sub);
 
-    // Generate the lib.rs source code
+    // Inputs must be under an include path -> prefix with "s2client-proto/"
+    let input_files_rel: Vec<String> = input_mods
+        .iter()
+        .map(|s| format!("s2client-proto/s2clientprotocol/{}.proto", s))
+        .collect();
+    let input_file_refs: Vec<&str> = input_files_rel.iter().map(|s| s.as_str()).collect();
+
+    // Re-run build if any proto changes
+    for s in &input_mods {
+        let p = include_sub.join(format!("{s}.proto"));
+        println!("cargo:rerun-if-changed={}", p.display());
+    }
+    println!("cargo:rerun-if-changed=s2client-proto");
+
+    // Vendored protoc and well-known types include
+    let protoc = protoc_bin_vendored::protoc_bin_path().expect("Failed to locate vendored protoc");
+    let protoc_include = protoc_bin_vendored::include_path().expect("Failed to get protoc include");
+
+    // Include both roots to satisfy imports like "common.proto" and "s2clientprotocol/common.proto"
+    let include_paths = vec![
+        include_root.to_str().unwrap(),
+        include_sub.to_str().unwrap(),
+        protoc_include.to_str().unwrap(),
+    ];
+
+    Codegen::new()
+        .protoc_path(&protoc)
+        .includes(&include_paths)
+        .inputs(&input_file_refs)
+        .out_dir(out_dir)
+        .run()
+        .expect("protoc codegen failed");
+
+    // Generate lib.rs listing modules
     fs::write(
         format!("{}/{}", out_dir, "lib.rs"),
         input_mods
